@@ -1,0 +1,370 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ========================
+// ENUMS
+// ========================
+
+enum Role {
+  CUSTOMER
+  STAFF
+  ADMIN
+}
+
+enum MembershipTier {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+}
+
+enum SocialProvider {
+  GOOGLE
+  APPLE
+}
+
+enum SeriesStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum RarityTier {
+  COMMON
+  UNCOMMON
+  RARE
+  SECRET
+}
+
+enum OrderType {
+  SINGLE
+  MULTI_PULL
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum VoucherStatus {
+  ACTIVE
+  REDEEMED
+  EXPIRED
+  CANCELLED
+}
+
+enum BranchStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum TransferStatus {
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+}
+
+enum DropStatus {
+  SCHEDULED
+  ACTIVE
+  ENDED
+  CANCELLED
+}
+
+// ========================
+// MODELS
+// ========================
+
+model User {
+  id              String         @id @default(uuid()) @db.Uuid
+  email           String         @unique @db.VarChar(255)
+  passwordHash    String?        @map("password_hash")
+  name            String         @db.VarChar(100)
+  role            Role           @default(CUSTOMER)
+  tier            MembershipTier @default(BRONZE)
+  tierProgress    Int            @default(0) @map("tier_progress")
+  socialProvider  SocialProvider? @map("social_provider")
+  socialId        String?        @map("social_id")
+  emailVerified   Boolean        @default(false) @map("email_verified")
+  lockedUntil     DateTime?      @map("locked_until")
+  failedAttempts  Int            @default(0) @map("failed_attempts")
+  referralCode    String         @unique @map("referral_code")
+  referredBy      String?        @map("referred_by") @db.Uuid
+
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  // Relations
+  referrer        User?          @relation("UserReferral", fields: [referredBy], references: [id])
+  referrals       User[]         @relation("UserReferral")
+  orders          Order[]
+  pullRecords     PullRecord[]
+  pityTrackers    PityTracker[]
+  vouchers        Voucher[]      @relation("VoucherUser")
+  redeemedVouchers Voucher[]     @relation("VoucherRedeemer")
+  stockTransfers  StockTransfer[]
+  dropPurchases   DropPurchaseRecord[]
+
+  @@unique([socialProvider, socialId])
+  @@map("users")
+}
+
+model Series {
+  id              String       @id @default(uuid()) @db.Uuid
+  name            String       @db.VarChar(200)
+  artist          String       @db.VarChar(100)
+  description     String?      @db.VarChar(1000)
+  pricePerBox     Decimal      @map("price_per_box") @db.Decimal(10, 2)
+  figureCount     Int          @map("figure_count")
+  coverImage      String       @map("cover_image")
+  status          SeriesStatus @default(DRAFT)
+  pityThreshold   Int          @default(50) @map("pity_threshold")
+  pityMultiplier  Decimal      @default(2.0) @map("pity_multiplier") @db.Decimal(3, 2)
+  publishedAt     DateTime?    @map("published_at")
+
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  figures         Figure[]
+  orders          Order[]
+  pullRecords     PullRecord[]
+  pityTrackers    PityTracker[]
+  dropEvents      DropEvent[]
+
+  @@index([status])
+  @@index([publishedAt])
+  @@map("series")
+}
+
+model Figure {
+  id          String     @id @default(uuid()) @db.Uuid
+  seriesId    String     @map("series_id") @db.Uuid
+  name        String     @db.VarChar(200)
+  image       String
+  rarity      RarityTier
+  probability Decimal    @db.Decimal(5, 2)
+  sortOrder   Int        @map("sort_order")
+
+  createdAt   DateTime   @default(now()) @map("created_at")
+
+  // Relations
+  series       Series        @relation(fields: [seriesId], references: [id])
+  pullRecords  PullRecord[]
+  stockRecords StockRecord[]
+  vouchers     Voucher[]
+  stockTransfers StockTransfer[]
+
+  @@index([seriesId])
+  @@index([seriesId, rarity])
+  @@map("figures")
+}
+
+model Order {
+  id                     String      @id @default(uuid()) @db.Uuid
+  userId                 String      @map("user_id") @db.Uuid
+  seriesId               String      @map("series_id") @db.Uuid
+  type                   OrderType
+  quantity               Int
+  totalAmount            Decimal     @map("total_amount") @db.Decimal(10, 2)
+  stripePaymentIntentId  String      @unique @map("stripe_payment_intent_id")
+  status                 OrderStatus @default(PENDING)
+
+  createdAt              DateTime    @default(now()) @map("created_at")
+  updatedAt              DateTime    @updatedAt @map("updated_at")
+
+  // Relations
+  user        User         @relation(fields: [userId], references: [id])
+  series      Series       @relation(fields: [seriesId], references: [id])
+  pullRecords PullRecord[]
+
+  @@index([userId])
+  @@index([seriesId])
+  @@index([status])
+  @@map("orders")
+}
+
+model PullRecord {
+  id              String     @id @default(uuid()) @db.Uuid
+  orderId         String     @map("order_id") @db.Uuid
+  userId          String     @map("user_id") @db.Uuid
+  seriesId        String     @map("series_id") @db.Uuid
+  figureId        String     @map("figure_id") @db.Uuid
+  rarity          RarityTier
+  pityCountAtPull Int        @map("pity_count_at_pull")
+  revealedAt      DateTime?  @map("revealed_at")
+
+  createdAt       DateTime   @default(now()) @map("created_at")
+
+  // Relations
+  order   Order   @relation(fields: [orderId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+  series  Series  @relation(fields: [seriesId], references: [id])
+  figure  Figure  @relation(fields: [figureId], references: [id])
+  voucher Voucher?
+
+  @@index([userId, seriesId])
+  @@index([orderId])
+  @@index([figureId])
+  @@map("pull_records")
+}
+
+model PityTracker {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  seriesId  String   @map("series_id") @db.Uuid
+  counter   Int      @default(0)
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user   User   @relation(fields: [userId], references: [id])
+  series Series @relation(fields: [seriesId], references: [id])
+
+  @@unique([userId, seriesId])
+  @@map("pity_trackers")
+}
+
+model Branch {
+  id              String       @id @default(uuid()) @db.Uuid
+  name            String       @db.VarChar(200)
+  address         String       @db.VarChar(500)
+  latitude        Decimal?     @db.Decimal(10, 7)
+  longitude       Decimal?     @db.Decimal(10, 7)
+  operatingHours  Json         @map("operating_hours")
+  status          BranchStatus @default(ACTIVE)
+
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  stockRecords      StockRecord[]
+  vouchers          Voucher[]
+  outgoingTransfers StockTransfer[] @relation("TransferFrom")
+  incomingTransfers StockTransfer[] @relation("TransferTo")
+
+  @@index([status])
+  @@map("branches")
+}
+
+model StockRecord {
+  id        String   @id @default(uuid()) @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+  figureId  String   @map("figure_id") @db.Uuid
+  available Int      @default(0)
+  reserved  Int      @default(0)
+  pickedUp  Int      @default(0) @map("picked_up")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  branch Branch @relation(fields: [branchId], references: [id])
+  figure Figure @relation(fields: [figureId], references: [id])
+
+  @@unique([branchId, figureId])
+  @@index([figureId])
+  @@map("stock_records")
+}
+
+model Voucher {
+  id           String        @id @default(uuid()) @db.Uuid
+  userId       String        @map("user_id") @db.Uuid
+  pullRecordId String        @unique @map("pull_record_id") @db.Uuid
+  branchId     String        @map("branch_id") @db.Uuid
+  figureId     String        @map("figure_id") @db.Uuid
+  qrToken      String        @unique @map("qr_token")
+  status       VoucherStatus @default(ACTIVE)
+  expiresAt    DateTime      @map("expires_at")
+  extendedOnce Boolean       @default(false) @map("extended_once")
+  redeemedAt   DateTime?     @map("redeemed_at")
+  redeemedBy   String?       @map("redeemed_by") @db.Uuid
+
+  createdAt    DateTime      @default(now()) @map("created_at")
+
+  // Relations
+  user       User       @relation("VoucherUser", fields: [userId], references: [id])
+  pullRecord PullRecord @relation(fields: [pullRecordId], references: [id])
+  branch     Branch     @relation(fields: [branchId], references: [id])
+  figure     Figure     @relation(fields: [figureId], references: [id])
+  redeemer   User?      @relation("VoucherRedeemer", fields: [redeemedBy], references: [id])
+
+  @@index([userId, status])
+  @@index([branchId, status])
+  @@index([expiresAt])
+  @@map("vouchers")
+}
+
+model StockTransfer {
+  id           String         @id @default(uuid()) @db.Uuid
+  figureId     String         @map("figure_id") @db.Uuid
+  fromBranchId String         @map("from_branch_id") @db.Uuid
+  toBranchId   String         @map("to_branch_id") @db.Uuid
+  quantity     Int
+  status       TransferStatus @default(IN_TRANSIT)
+  initiatedBy  String         @map("initiated_by") @db.Uuid
+  completedAt  DateTime?      @map("completed_at")
+
+  createdAt    DateTime       @default(now()) @map("created_at")
+
+  // Relations
+  figure     Figure @relation(fields: [figureId], references: [id])
+  fromBranch Branch @relation("TransferFrom", fields: [fromBranchId], references: [id])
+  toBranch   Branch @relation("TransferTo", fields: [toBranchId], references: [id])
+  initiator  User   @relation(fields: [initiatedBy], references: [id])
+
+  @@index([fromBranchId])
+  @@index([toBranchId])
+  @@index([status])
+  @@map("stock_transfers")
+}
+
+model DropEvent {
+  id                  String          @id @default(uuid()) @db.Uuid
+  seriesId            String          @map("series_id") @db.Uuid
+  name                String          @db.VarChar(200)
+  startsAt            DateTime        @map("starts_at")
+  endsAt              DateTime?       @map("ends_at")
+  totalQuantity       Int             @map("total_quantity")
+  remainingQuantity   Int             @map("remaining_quantity")
+  perPersonLimit      Int             @default(1) @map("per_person_limit")
+  earlyAccessMinutes  Int             @default(0) @map("early_access_minutes")
+  earlyAccessMinTier  MembershipTier? @map("early_access_min_tier")
+  status              DropStatus      @default(SCHEDULED)
+
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+
+  // Relations
+  series    Series               @relation(fields: [seriesId], references: [id])
+  purchases DropPurchaseRecord[]
+
+  @@index([status])
+  @@index([startsAt])
+  @@index([seriesId])
+  @@map("drop_events")
+}
+
+model DropPurchaseRecord {
+  id            String @id @default(uuid()) @db.Uuid
+  dropEventId   String @map("drop_event_id") @db.Uuid
+  userId        String @map("user_id") @db.Uuid
+  purchaseCount Int    @default(0) @map("purchase_count")
+
+  // Relations
+  dropEvent DropEvent @relation(fields: [dropEventId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@unique([dropEventId, userId])
+  @@map("drop_purchase_records")
+}

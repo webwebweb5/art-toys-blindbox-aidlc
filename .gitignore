@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+.next/
+out/
+build/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Testing
+coverage/
+.nyc_output/
+
+# Turborepo
+.turbo/
+
+# Prisma
+apps/api/prisma/migrations/
+
+# Generated
+*.generated.*
+prisma/client/
+
+# Uploaded files (keep folder, ignore contents)
+apps/api/uploads/*
+!apps/api/uploads/.gitkeep

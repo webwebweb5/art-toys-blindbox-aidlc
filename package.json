@@ -1,0 +1,23 @@
+{
+  "name": "art-toys-blindbox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Digital blind box Art Toys platform - monorepo",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean && rimraf node_modules"
+  },
+  "devDependencies": {
+    "turbo": "1.12.5",
+    "rimraf": "5.0.5",
+    "typescript": "5.3.3"
+  },
+  "packageManager": "pnpm@8.15.4",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  }
+}
