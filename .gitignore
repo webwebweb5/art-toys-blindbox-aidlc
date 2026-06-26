@@ -13,6 +13,11 @@ build/
 .env.local
 .env.*.local
 
+# Secrets / keys — NEVER commit private keys
+*.pem
+*.key
+deploy/*.pem
+
 # IDE
 .idea/
 .vscode/
@@ -36,7 +41,7 @@ coverage/
 .turbo/
 
 # Prisma
-apps/api/prisma/migrations/
+# NOTE: migrations/ MUST be committed — `prisma migrate deploy` needs them to create tables.
 
 # Generated
 *.generated.*

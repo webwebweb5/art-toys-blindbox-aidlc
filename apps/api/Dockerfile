@@ -3,7 +3,7 @@
 # ============================================
 FROM node:20-alpine AS deps
 
-RUN apk add --no-cache libc6-compat
+RUN apk add --no-cache libc6-compat openssl
 RUN corepack enable && corepack prepare pnpm@8.15.4 --activate
 
 WORKDIR /app
@@ -25,6 +25,7 @@ RUN pnpm install --frozen-lockfile
 # ============================================
 FROM node:20-alpine AS builder
 
+RUN apk add --no-cache libc6-compat openssl
 RUN corepack enable && corepack prepare pnpm@8.15.4 --activate
 
 WORKDIR /app
@@ -38,7 +39,7 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json ./
 COPY apps/api/ ./apps/api/
 COPY packages/ ./packages/
 
-# Generate Prisma client
+# Generate Prisma client (openssl present so the correct engine is produced)
 RUN pnpm --filter api db:generate
 
 # Build the API
@@ -49,32 +50,21 @@ RUN pnpm --filter api build
 # ============================================
 FROM node:20-alpine AS production
 
-RUN apk add --no-cache dumb-init
-
-WORKDIR /app
+RUN apk add --no-cache dumb-init libc6-compat openssl
 
 ENV NODE_ENV=production
 
-# Create non-root user
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nestjs
+WORKDIR /app
 
-# Copy built application
-COPY --from=builder /app/apps/api/dist ./dist
-COPY --from=builder /app/apps/api/node_modules ./node_modules
-COPY --from=builder /app/apps/api/package.json ./package.json
+# Copy the whole built workspace so pnpm's symlinked node_modules + the
+# generated Prisma client (.pnpm store) stay intact. Run from the api package.
+COPY --from=builder /app ./
 
-# Copy Prisma schema and generated client
-COPY --from=builder /app/apps/api/prisma ./prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-
-USER nestjs
+WORKDIR /app/apps/api
 
 EXPOSE 3001
-
 ENV PORT=3001
 
-# Use dumb-init to handle PID 1 and signal forwarding
+# dumb-init handles PID 1 + signal forwarding
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "dist/src/main"]
